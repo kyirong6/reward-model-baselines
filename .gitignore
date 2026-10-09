@@ -1,0 +1,15 @@
+/repos/
+/envs/
+/tools/
+/cache/
+/checkpoints/
+/data/
+/logs/
+/results/
+/bundles/
+/.aws/
+/.agents/
+/.codex/
+.env
+__pycache__/
+*.pyc
