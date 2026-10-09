@@ -82,6 +82,9 @@ PY
         "$PYTHON" -m pip install numpy==2.4.4 packaging ninja wheel psutil
         "$PYTHON" -m pip install torch==2.9.1 torchaudio==2.9.1 \
             --index-url https://download.pytorch.org/whl/cu128
+        # moss-audio 0.1.0 is installed from its official source, not PyPI.
+        "$PYTHON" -m pip install --no-deps --no-build-isolation \
+            "moss-audio @ git+https://github.com/OpenMOSS/MOSS-Audio.git"
         "$PYTHON" -m pip install --no-build-isolation -r repos/MuseCritic/requirements.txt \
             --extra-index-url https://download.pytorch.org/whl/cu128
         ;;
