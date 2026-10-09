@@ -84,6 +84,7 @@ def make_scorer(args):
     import numpy as np
     np.random.seed(42)
     if args.model == 'tunejury':
+        # Upstream Scorer handles CLAP/MERT preprocessing and its scalar reward.
         sys.path.insert(0, str(ROOT / 'repos/TuneJury'))
         from tunejury.score import Scorer
         scorer = Scorer.from_pretrained(
@@ -104,6 +105,7 @@ def make_scorer(args):
         encoder = MuQ.from_pretrained('OpenMuQ/MuQ-large-msd-iter').to(args.device).eval()
 
         def score(path, row):
+            # Match SongEval's eval.py: mono 24 kHz -> MuQ layer 6 -> five scores.
             wave, _ = librosa.load(path, sr=24000)
             audio = torch.tensor(wave, device=args.device).unsqueeze(0)
             features = encoder(audio, output_hidden_states=True)['hidden_states'][6]
@@ -111,13 +113,14 @@ def make_scorer(args):
             return {'scores': dict(zip(KEYS, values))}
         return score
     if args.model == 'cmi':
+        # Use the upstream final mode and its default audio duration limit.
         sys.path.insert(0, str(ROOT / 'repos/CMI-RewardBench'))
         from baselines.inference import RewardModelInference
         scorer = RewardModelInference(str(args.checkpoint or ROOT / 'checkpoints/cmi/model.safetensors'),
                                       device=args.device, mode='final',
                                       bf16=args.device.startswith('cuda') and torch.cuda.is_bf16_supported())
         return lambda path, row: {'scores': scorer.score(
-            path, text=row['prompt'], lyrics=row.get('lyrics') or '', max_dur=None)}
+            path, text=row['prompt'], lyrics=row.get('lyrics') or '')}
     repo = ROOT / 'repos/MuseCritic/infer'
     module = load_module('musecritic_inference', repo / 'infer.py')
     module.INFER_CODE_PATH = repo
@@ -170,7 +173,7 @@ def run(args):
     metadata = dict(vars(args))
     metadata.update(slurm_job_id=os.environ.get('SLURM_JOB_ID'), torch_version=torch.__version__,
                     seed=42,
-                    audio_policy='full tracks; repository-native preprocessing',
+                    audio_policy='no runner cropping; model-specific preprocessing may crop or chunk',
                     primary_score={'tunejury': 'reward', 'cmi': 'quality'}.get(args.model, 'Musicality'),
                     tie_policy='exact ties count as incorrect',
                     gpu=torch.cuda.get_device_name() if args.device.startswith('cuda') else None)
