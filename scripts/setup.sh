@@ -28,6 +28,9 @@ if [[ ! -d "repos/$REPO" ]]; then
 fi
 export CONDA_PKGS_DIRS="$BASELINE_ROOT/cache/conda-pkgs"
 export PIP_CACHE_DIR="$BASELINE_ROOT/cache/pip"
+# FlashAttention moves its wheel with rename(), which must stay on one filesystem.
+export TMPDIR="$BASELINE_ROOT/cache/tmp"
+mkdir -p "$TMPDIR"
 export HF_HOME="$BASELINE_ROOT/cache/huggingface"
 export TORCH_HOME="$BASELINE_ROOT/cache/torch"
 export XDG_CACHE_HOME="$BASELINE_ROOT/cache/xdg"
