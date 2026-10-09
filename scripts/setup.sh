@@ -57,7 +57,7 @@ PY
         ;;
     songeval)
         "$PYTHON" -m pip install -r repos/SongEval/requirements.txt \
-            torchaudio==2.7.0 safetensors einops huggingface_hub
+            torchaudio==2.7.0 safetensors einops huggingface_hub transformers==4.57.1
         ;;
     cmi)
         "$PYTHON" -m pip install -r repos/CMI-RewardBench/baselines/requirements.txt \
