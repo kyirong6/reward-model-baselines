@@ -36,5 +36,5 @@ sbatch --partition=YOUR_PARTITION --gres=gpu:1 slurm/baseline.sbatch songeval --
 Adjust the partition and GPU request for your cluster.
 
 If Conda is not on PATH, set `CONDA_EXE=/path/to/miniforge3/bin/conda` before setup.
-MuseCritic requires CUDA build tools (`nvcc`) and bfloat16 GPU support.
+MuseCritic setup reuses CUDA 12.8 or installs it locally; tests require bfloat16 GPU support.
 CMI may need internet on its first run to download additional model components.

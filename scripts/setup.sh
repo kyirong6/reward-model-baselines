@@ -61,10 +61,27 @@ PY
             safetensors huggingface_hub sentencepiece peft
         ;;
     musecritic)
+        # Build flash-attn with a toolkit matching the PyTorch CUDA wheels.
+        "$CONDA" install -y -p "$ENV_PATH" --override-channels -c conda-forge gxx_linux-64=13
+        NVCC="$(command -v nvcc || true)"
+        if [[ -x "${CUDA_HOME:-}/bin/nvcc" ]]; then
+            NVCC="$CUDA_HOME/bin/nvcc"
+        fi
+        if [[ -n "$NVCC" ]] && "$NVCC" --version | grep -q 'release 12.8,'; then
+            export CUDA_HOME="$(dirname "$(dirname "$(readlink -f "$NVCC")")")"
+        else
+            "$CONDA" install -y -p "$ENV_PATH" --override-channels -c nvidia -c conda-forge \
+                cuda-toolkit=12.8
+            export CUDA_HOME="$ENV_PATH"
+        fi
+        export PATH="$CUDA_HOME/bin:$PATH"
+        export CC="$ENV_PATH/bin/x86_64-conda-linux-gnu-cc"
+        export CXX="$ENV_PATH/bin/x86_64-conda-linux-gnu-c++"
+        export MAX_JOBS="${MAX_JOBS:-4}"
         # Install PyTorch/build dependencies before compiling flash-attn.
+        "$PYTHON" -m pip install numpy==2.4.4 packaging ninja wheel psutil
         "$PYTHON" -m pip install torch==2.9.1 torchaudio==2.9.1 \
             --index-url https://download.pytorch.org/whl/cu128
-        "$PYTHON" -m pip install packaging ninja wheel psutil
         "$PYTHON" -m pip install --no-build-isolation -r repos/MuseCritic/requirements.txt \
             --extra-index-url https://download.pytorch.org/whl/cu128
         ;;
