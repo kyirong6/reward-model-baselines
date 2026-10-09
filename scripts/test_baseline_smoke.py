@@ -4,7 +4,6 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
-import shutil
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -49,29 +48,14 @@ class SmokeTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.prepare()
 
-    def test_portable_bundle_relocation_and_checksum(self):
-        manifest = self.prepare(2)
-        destination = self.root / 'bundle'
-        runner.bundle(SimpleNamespace(manifest=manifest, output=destination))
-        rows = runner.read_jsonl(destination / 'pairs.jsonl')
-        self.assertFalse(Path(rows[0]['audio_a']).is_absolute())
-        self.assertEqual(len(list((destination / 'audio').iterdir())), 1)
-        with self.assertRaises(FileExistsError):
-            runner.bundle(SimpleNamespace(manifest=manifest, output=destination))
-        moved = self.root / 'different' / 'bundle'
-        moved.parent.mkdir()
-        shutil.move(str(destination), moved)
-        (self.root / 'audio.mp3').unlink()
-        args = SimpleNamespace(manifest=moved / 'pairs.jsonl', validate_only=True)
-        runner.run(args)
-        (moved / rows[0]['audio_a']).write_bytes(b'corrupted')
-        with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
-            runner.run(args)
+    def test_relative_audio_paths(self):
+        rows = runner.resolve_audio(runner.read_jsonl(self.source), self.source)
+        self.assertTrue(all(Path(row['audio_a']) == self.root / 'audio.mp3' for row in rows))
 
     def test_pair_scoring_and_tie_accounting(self):
         manifest = self.prepare(2)
         args = SimpleNamespace(manifest=manifest, output=self.root / 'results', model='cmi',
-                               device='cpu', validate_only=False, allow_local=True)
+                               device='cpu', count=0)
         fake_torch = SimpleNamespace(manual_seed=lambda seed: None, __version__='test',
                                      inference_mode=contextlib.nullcontext)
         scores = iter([{'scores': {'quality': 2., 'alignment': 1.}},

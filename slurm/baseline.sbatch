@@ -10,23 +10,7 @@ set -euo pipefail
 
 # Submit from workspace root. Override resource requests with sbatch flags.
 cd "${SLURM_SUBMIT_DIR:?Submit this script with sbatch from the workspace root}"
-BASELINE_ROOT="$PWD"
-MODEL="${1:?Usage: sbatch slurm/baseline.sbatch MODEL [runner options]}"
-shift
-case "$MODEL" in songeval|tunejury|cmi|musecritic) ;; *) echo "Unknown model: $MODEL" >&2; exit 2;; esac
-PYTHON="$BASELINE_ROOT/envs/$MODEL/bin/python"
-if [[ ! -x "$PYTHON" ]]; then
-    echo "Missing environment. Run: bash scripts/setup_baseline.sh $MODEL" >&2
-    exit 1
-fi
-export HF_HOME="$BASELINE_ROOT/cache/huggingface"
-export TORCH_HOME="$BASELINE_ROOT/cache/torch"
-export XDG_CACHE_HOME="$BASELINE_ROOT/cache/xdg"
-export PYTHONNOUSERSITE=1
+MODEL="${1:-songeval}"
+if [[ $# -gt 0 ]]; then shift; fi
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
-export TOKENIZERS_PARALLELISM=false
-export PYTHONUNBUFFERED=1
-export PATH="$BASELINE_ROOT/envs/$MODEL/bin:$PATH"
-# Do not set CUDA_VISIBLE_DEVICES: Slurm supplies the assigned GPU.
-bash "$BASELINE_ROOT/scripts/run_baseline.sh" "$MODEL" \
-    --output "$BASELINE_ROOT/results/smoke/${MODEL}-${SLURM_JOB_ID}" "$@"
+bash scripts/test.sh "$MODEL" "$@"

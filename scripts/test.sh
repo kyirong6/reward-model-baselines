@@ -2,12 +2,16 @@
 # Use on an allocated GPU, or through slurm/baseline.sbatch.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-MODEL="${1:?Usage: bash scripts/run_baseline.sh MODEL --manifest PATH --output PATH}"
-shift
+MODEL="${1:-songeval}"
+if [[ $# -gt 0 ]]; then shift; fi
+if [[ "$MODEL" == all ]]; then
+    for model in songeval tunejury cmi musecritic; do bash scripts/test.sh "$model" "$@"; done
+    exit 0
+fi
 case "$MODEL" in songeval|tunejury|cmi|musecritic) ;; *) echo "Unknown model: $MODEL" >&2; exit 2;; esac
 PYTHON="$PWD/envs/$MODEL/bin/python"
 if [[ ! -x "$PYTHON" ]]; then
-    echo "Run bash scripts/setup_baseline.sh $MODEL first." >&2
+    echo "Run bash scripts/setup.sh $MODEL first." >&2
     exit 1
 fi
 export HF_HOME="$PWD/cache/huggingface"
@@ -17,5 +21,4 @@ export PYTHONNOUSERSITE=1
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
 export PATH="$PWD/envs/$MODEL/bin:$PATH"
-python3 scripts/bootstrap_repos.py --check
-"$PYTHON" scripts/baseline_smoke.py run --model "$MODEL" --allow-local "$@"
+"$PYTHON" scripts/baseline_smoke.py run --model "$MODEL" "$@"

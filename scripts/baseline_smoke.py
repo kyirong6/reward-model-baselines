@@ -7,11 +7,9 @@ import math
 import os
 from pathlib import Path
 import random
-import shutil
 import sys
 import time
-import hashlib
-import subprocess
+from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = ('songeval', 'tunejury', 'cmi', 'musecritic')
@@ -29,48 +27,14 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + '\n')
 
 
-def sha256(path):
-    digest = hashlib.sha256()
-    with Path(path).open('rb') as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b''):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def resolve_audio(rows, manifest):
     for row in rows:
         for key in ('audio_a', 'audio_b'):
             path = (Path(manifest).resolve().parent / row[key]).resolve()
             if not path.is_file():
                 raise FileNotFoundError(path)
-            expected = row.get(key + '_sha256')
-            if expected and sha256(path) != expected:
-                raise ValueError(f'Audio checksum mismatch: {path}')
             row[key] = str(path)
     return rows
-
-
-def bundle(args):
-    """Copy a prepared manifest and its audio into a relocatable directory."""
-    rows = resolve_audio(read_jsonl(args.manifest), args.manifest)
-    if not rows:
-        raise ValueError('Empty manifest')
-    args.output.mkdir(parents=True, exist_ok=False)
-    audio_dir = args.output / 'audio'
-    audio_dir.mkdir()
-    for row in rows:
-        for key in ('audio_a', 'audio_b'):
-            source = Path(row[key])
-            digest = sha256(source)
-            target = audio_dir / (digest + source.suffix)
-            if not target.exists():
-                shutil.copyfile(source, target)
-            row[key] = str(target.relative_to(args.output))
-            row[key + '_sha256'] = digest
-    with (args.output / 'pairs.jsonl').open('w', encoding='utf-8') as stream:
-        for row in rows:
-            stream.write(json.dumps(row, ensure_ascii=False) + '\n')
-    print(f'Portable bundle: {args.output} ({len(rows)} pairs)')
 
 
 def prepare(args):
@@ -115,26 +79,13 @@ def load_module(name, path):
     return module
 
 
-def downloaded_path(model, repo):
-    record = ROOT / 'checkpoints' / (model + '-downloads.json')
-    if not record.is_file():
-        raise FileNotFoundError(f'Run scripts/download_baseline.py {model} first')
-    entry = json.loads(record.read_text())[repo]
-    lock = json.loads((ROOT / 'weights.lock.json').read_text())
-    if entry['revision'] != lock[repo] or not Path(entry['path']).exists():
-        raise ValueError(f'Download is missing or differs from weights.lock.json: {repo}')
-    return entry['path']
-
-
 def make_scorer(args):
     import torch
     import numpy as np
     np.random.seed(42)
     if args.model == 'tunejury':
         sys.path.insert(0, str(ROOT / 'repos/TuneJury'))
-        import tunejury.score as tunejury_score
-        tunejury_score.MERT_HF_NAME = downloaded_path('tunejury', 'm-a-p/MERT-v1-330M')
-        Scorer = tunejury_score.Scorer
+        from tunejury.score import Scorer
         scorer = Scorer.from_pretrained(
             str(ROOT / 'repos/TuneJury/checkpoints/tunejury.pt'),
             clap_ckpt_path=str(ROOT / 'checkpoints/clap.pt'), device=args.device)
@@ -150,8 +101,7 @@ def make_scorer(args):
         config.pop('_target_')
         head = module.Generator(**config).to(args.device).eval()
         head.load_state_dict(load_file(str(ROOT / 'repos/SongEval/ckpt/model.safetensors')))
-        encoder = MuQ.from_pretrained(downloaded_path(
-            'songeval', 'OpenMuQ/MuQ-large-msd-iter')).to(args.device).eval()
+        encoder = MuQ.from_pretrained('OpenMuQ/MuQ-large-msd-iter').to(args.device).eval()
 
         def score(path, row):
             wave, _ = librosa.load(path, sr=24000)
@@ -193,7 +143,10 @@ def comparison(a, b):
 
 
 def run(args):
-    rows = resolve_audio(read_jsonl(args.manifest), args.manifest)
+    rows = read_jsonl(args.manifest)
+    if args.count < 0 or args.count > len(rows):
+        raise ValueError(f'count must be between 0 and {len(rows)} (0 means all)')
+    rows = resolve_audio(rows[:args.count or len(rows)], args.manifest)
     if not rows:
         raise ValueError('Empty manifest')
     if len({r['pair_id'] for r in rows}) != len(rows):
@@ -201,40 +154,20 @@ def run(args):
     for row in rows:
         if row['preference'] not in ('A', 'B'):
             raise ValueError('Preference must be A or B')
-        for key in ('audio_a', 'audio_b'):
-            if not Path(row[key]).is_file():
-                raise FileNotFoundError(row[key])
-    if args.validate_only:
-        print(f'Valid manifest: {len(rows)} pairs, {2 * len(rows)} audio references')
-        return
-    if not os.environ.get('SLURM_JOB_ID') and not args.allow_local:
-        raise RuntimeError('Run through Slurm, or explicitly pass --allow-local.')
     import torch
     if args.device.startswith('cuda') and not torch.cuda.is_available():
         raise RuntimeError('CUDA unavailable: verify GPU allocation and PyTorch installation')
     if args.model == 'musecritic' and args.device.startswith('cuda') and not torch.cuda.is_bf16_supported():
-        raise RuntimeError('MuseCritic uses bfloat16: request a modern GPU such as gpu:l40s:1')
+        raise RuntimeError('MuseCritic requires a GPU supporting bfloat16')
     random.seed(42)
     torch.manual_seed(42)
+    if args.output is None:
+        args.output = ROOT / 'results' / f'{args.model}-{datetime.now():%Y%m%d-%H%M%S-%f}'
     args.output.mkdir(parents=True, exist_ok=False)
-    shutil.copyfile(args.manifest, args.output / 'pairs.jsonl')
-    with (args.output / 'resolved-pairs.jsonl').open('w', encoding='utf-8') as stream:
+    with (args.output / 'pairs.jsonl').open('w', encoding='utf-8') as stream:
         for row in rows:
             stream.write(json.dumps(row, ensure_ascii=False) + '\n')
     metadata = dict(vars(args))
-    metadata['manifest_sha256'] = sha256(args.manifest)
-    metadata['audio_sha256'] = {r['pair_id']: {
-        side: sha256(r['audio_' + side]) for side in ('a', 'b')} for r in rows}
-    metadata['upstream_lock'] = json.loads((ROOT / 'repos.lock.json').read_text())
-    metadata['weights_lock'] = json.loads((ROOT / 'weights.lock.json').read_text())
-    metadata['source_sha256'] = {str(p.relative_to(ROOT)): sha256(p)
-                               for p in sorted((ROOT / 'scripts').glob('*.py'))}
-    metadata['upstream_commits'] = {}
-    for name in metadata['upstream_lock']:
-        metadata['upstream_commits'][name] = subprocess.check_output(
-            ['git', '-C', str(ROOT / 'repos' / name), 'rev-parse', 'HEAD'], text=True).strip()
-    packages = subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'], text=True)
-    (args.output / 'packages.txt').write_text(packages)
     metadata.update(slurm_job_id=os.environ.get('SLURM_JOB_ID'), torch_version=torch.__version__,
                     seed=42,
                     audio_policy='full tracks; repository-native preprocessing',
@@ -284,6 +217,7 @@ def run(args):
                                             for r in results) / len(results)
     write_json(args.output / 'summary.json', summary)
     print(json.dumps(summary, indent=2))
+    print(f'Results: {args.output}')
 
 
 def main():
@@ -294,24 +228,18 @@ def main():
     prep.add_argument('--output', type=Path, default=ROOT / 'data/processed/smoke/pairs.jsonl')
     prep.add_argument('--count', type=int, default=1, help='0 selects all pairs')
     prep.add_argument('--seed', type=int, default=42)
-    pack = commands.add_parser('bundle', help='Copy selected audio into a portable, checksummed bundle')
-    pack.add_argument('--manifest', type=Path, required=True)
-    pack.add_argument('--output', type=Path, required=True, help='New bundle directory')
     runner = commands.add_parser('run')
     runner.add_argument('--model', choices=MODELS, required=True)
-    runner.add_argument('--manifest', type=Path, default=ROOT / 'data/processed/smoke/pairs.jsonl')
-    runner.add_argument('--output', type=Path, required=True, help='New directory; never overwritten')
+    runner.add_argument('--manifest', type=Path, default=ROOT / 'examples/pairs.jsonl')
+    runner.add_argument('--count', type=int, default=1, help='Number of pairs; 0 selects all')
+    runner.add_argument('--output', type=Path, help='Default: results/MODEL-TIMESTAMP')
     runner.add_argument('--device', default='cuda:0')
     runner.add_argument('--checkpoint', type=Path, help='CMI checkpoint file or MuseCritic directory')
     runner.add_argument('--empty-prompt', action='store_true', help='TuneJury empty-prompt ablation')
     runner.add_argument('--max-new-tokens', type=int, default=4096)
-    runner.add_argument('--validate-only', action='store_true')
-    runner.add_argument('--allow-local', action='store_true')
     args = parser.parse_args()
     if args.command == 'prepare':
         prepare(args)
-    elif args.command == 'bundle':
-        bundle(args)
     else:
         run(args)
 
