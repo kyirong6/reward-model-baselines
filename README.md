@@ -30,6 +30,26 @@ unweighted mean of all returned scores (TuneJury's single reward is unchanged).
 Exact ties count as incorrect. Predictions include the individual scores and
 their mean; CMI alignment accuracy is also reported separately.
 
+To combine all completed runs (CPU only; Python standard library):
+
+```bash
+envs/songeval/bin/python scripts/consolidate_results.py
+```
+
+This regenerates `results/combined_predictions.jsonl` with one record per
+model/run/pair, retaining dimension scores, critiques, decisions, and pair inputs.
+Each record includes `model`, `run_id`, `source_directory`, `primary_score`, and
+`tie_policy`. Missing legacy means are calculated and marked with
+`mean_score_source: "derived"`; existing means are marked `"saved"`. Recorded
+predictions and accuracy are preserved even when an older run used another rule.
+
+`results/combined_summary.json` groups run metadata and summaries under
+`models[MODEL][RUN_ID]`. Repeated runs are retained separately. Runs without a
+`summary.json` are skipped and listed in `skipped_incomplete_runs`. Original run
+files are preserved. Use `--results-dir PATH` and optionally `--output-dir PATH`
+to read another checkout or write the combined files elsewhere. Regenerate after
+new runs finish; compare model accuracy on matching pair sets and scoring rules.
+
 ## On a Slurm cluster
 
 After setup, submit from the repository directory:
