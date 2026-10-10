@@ -59,14 +59,16 @@ class SmokeTests(unittest.TestCase):
         fake_torch = SimpleNamespace(manual_seed=lambda seed: None, __version__='test',
                                      inference_mode=contextlib.nullcontext)
         scores = iter([{'scores': {'quality': 2., 'alignment': 1.}},
+                       {'scores': {'quality': 1., 'alignment': 4.}},
                        {'scores': {'quality': 1., 'alignment': 2.}},
-                       {'scores': {'quality': 1., 'alignment': 2.}},
-                       {'scores': {'quality': 1., 'alignment': 1.}}])
+                       {'scores': {'quality': 2., 'alignment': 1.}}])
         with patch.dict('sys.modules', {'torch': fake_torch}), patch.object(
                 runner, 'make_scorer', return_value=lambda path, row: next(scores)):
             runner.run(args)
         predictions = runner.read_jsonl(args.output / 'predictions.jsonl')
-        self.assertEqual([r['prediction'] for r in predictions], ['A', 'tie'])
+        self.assertEqual([r['prediction'] for r in predictions], ['B', 'tie'])
+        self.assertEqual(predictions[0]['a']['mean_score'], 1.5)
+        self.assertEqual(predictions[0]['b']['mean_score'], 2.5)
         self.assertEqual([r['alignment_prediction'] for r in predictions], ['B', 'A'])
         summary = json.loads((args.output / 'summary.json').read_text())
         self.assertEqual(summary['ties'], 1)

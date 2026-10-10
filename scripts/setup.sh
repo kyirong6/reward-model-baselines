@@ -61,7 +61,10 @@ PY
         ;;
     cmi)
         "$PYTHON" -m pip install -r repos/CMI-RewardBench/baselines/requirements.txt \
-            safetensors huggingface_hub sentencepiece peft
+            safetensors huggingface_hub sentencepiece peft torchcodec==0.10.0
+        # CMI decodes audio on CPU. Match PyTorch 2.10 and avoid CUDA codec libraries.
+        "$PYTHON" -m pip install --force-reinstall --no-deps torchcodec==0.10.0 \
+            --index-url https://download.pytorch.org/whl/cpu
         ;;
     musecritic)
         # Build flash-attn with a toolkit matching the PyTorch CUDA wheels.

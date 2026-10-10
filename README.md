@@ -25,6 +25,11 @@ bash scripts/test.sh songeval --count 10
 Results are saved in `results/MODEL-TIMESTAMP/`. Open `summary.json` for accuracy
 and timing, or `predictions.jsonl` for individual scores.
 
+Each model scores both audios separately. Preference is determined by the higher
+unweighted mean of all returned scores (TuneJury's single reward is unchanged).
+Exact ties count as incorrect. Predictions include the individual scores and
+their mean; CMI alignment accuracy is also reported separately.
+
 ## On a Slurm cluster
 
 After setup, submit from the repository directory:

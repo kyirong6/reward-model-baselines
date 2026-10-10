@@ -174,7 +174,7 @@ def run(args):
     metadata.update(slurm_job_id=os.environ.get('SLURM_JOB_ID'), torch_version=torch.__version__,
                     seed=42,
                     audio_policy='no runner cropping; model-specific preprocessing may crop or chunk',
-                    primary_score={'tunejury': 'reward', 'cmi': 'quality'}.get(args.model, 'Musicality'),
+                    primary_score='mean of all returned scores',
                     tie_policy='exact ties count as incorrect',
                     gpu=torch.cuda.get_device_name() if args.device.startswith('cuda') else None)
     write_json(args.output / 'run.json', {k: str(v) if isinstance(v, Path) else v
@@ -193,8 +193,8 @@ def run(args):
                     scores = outputs[side]['scores']
                     if not scores or not all(math.isfinite(float(v)) for v in scores.values()):
                         raise ValueError(f'Invalid scores: {row["pair_id"]}, side {side}')
-                key = metadata['primary_score']
-                predicted = comparison(outputs['a']['scores'][key], outputs['b']['scores'][key])
+                    outputs[side]['mean_score'] = sum(float(v) for v in scores.values()) / len(scores)
+                predicted = comparison(outputs['a']['mean_score'], outputs['b']['mean_score'])
                 result = dict(pair_id=row['pair_id'], preference=row['preference'],
                               is_instrumental=row['is_instrumental'], prediction=predicted,
                               correct=predicted == row['preference'],
